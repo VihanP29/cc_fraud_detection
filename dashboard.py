@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 import io
 
@@ -67,8 +68,16 @@ def locate_engine_executable() -> str:
     )
 
 
-def run_engine_stream(num_transactions: int) -> tuple[float, pd.DataFrame]:
-    engine_cmd = [locate_engine_executable(), "--stream", str(num_transactions)]
+def run_engine_stream(num_transactions: int, window_size: int, sensitivity: float) -> tuple[float, pd.DataFrame]:
+    engine_cmd = [
+        locate_engine_executable(),
+        "--stream",
+        str(num_transactions),
+        "--window",
+        str(window_size),
+        "--sensitivity",
+        str(sensitivity),
+    ]
     completed = subprocess.run(
         engine_cmd,
         cwd=ROOT_DIR,
@@ -89,24 +98,66 @@ def run_engine_stream(num_transactions: int) -> tuple[float, pd.DataFrame]:
 
 
 def plot_transactions(df: pd.DataFrame) -> None:
-    fig = px.line(
-        df,
-        x="Transaction_ID",
-        y="Amount",
-        title="Transaction Amounts Over Time",
-        labels={"Transaction_ID": "Transaction ID", "Amount": "Amount ($)"},
-    )
-    anomalies = df[df["Is_Anomaly"] == 1]
-    if not anomalies.empty:
-        fig.add_scatter(
-            x=anomalies["Transaction_ID"],
-            y=anomalies["Amount"],
-            mode="markers",
-            marker=dict(color="red", size=10, symbol="x"),
-            name="Anomaly",
+    chart_placeholder = st.empty()
+    alert_placeholder = st.empty()
+    chunk_size = 50
+
+    for start in range(0, len(df), chunk_size):
+        end = min(start + chunk_size, len(df))
+        visible_df = df.iloc[:end]
+
+        fig = px.line(
+            visible_df,
+            x="Transaction_ID",
+            y="Amount",
+            title="Transaction Amounts Over Time",
+            labels={"Transaction_ID": "Transaction ID", "Amount": "Amount ($)"},
         )
-    fig.update_layout(hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+        anomalies = visible_df[visible_df["Is_Anomaly"] == 1]
+        if not anomalies.empty:
+            fig.add_scatter(
+                x=anomalies["Transaction_ID"],
+                y=anomalies["Amount"],
+                mode="markers",
+                marker=dict(color="red", size=10, symbol="x"),
+                name="Anomaly",
+            )
+            alert_placeholder.error(
+                f"Live Alerts: {len(anomalies)} anomaly(s) detected in transactions {start + 1}-{end}."
+            )
+        else:
+            alert_placeholder.info(
+                f"Live Alerts: No anomalies in transactions {start + 1}-{end}."
+            )
+
+        fig.update_layout(hovermode="x unified")
+        chart_placeholder.plotly_chart(fig, use_container_width=True)
+        time.sleep(0.06)
+
+    alert_placeholder.success("Stream complete: audit summary below.")
+
+
+def render_audit_report(df: pd.DataFrame, tps: float, window_size: int, sensitivity: float) -> None:
+    total_transactions = len(df)
+    total_anomalies = int(df["Is_Anomaly"].sum())
+    max_anomaly_value = float(df.loc[df["Is_Anomaly"] == 1, "Amount"].max()) if total_anomalies else 0.0
+    anomaly_rate = (total_anomalies / total_transactions) * 100 if total_transactions else 0.0
+
+    st.markdown("---")
+    st.markdown("### Post-Market Audit Report")
+    st.markdown(
+        f"**Operational Summary:** The C++ risk engine processed {total_transactions:,} transactions using a rolling window of {window_size} and "
+        f"a sensitivity threshold of {sensitivity:.2f} standard deviations."
+    )
+    st.markdown(
+        f"- **Total Anomalies Flagged:** {total_anomalies:,} ({anomaly_rate:.2f}% of stream)\n"
+        f"- **Peak Anomaly Value:** ${max_anomaly_value:,.2f}\n"
+        f"- **Average Throughput:** {tps:,.2f} TPS\n"
+    )
+    st.markdown(
+        "**Risk Narrative:** The system maintained stable throughput while preserving a conservative anomaly threshold. "
+        "Any red alerts above indicate deviations that warrant immediate audit and follow-up action."
+    )
 
 
 def main() -> None:
@@ -122,14 +173,29 @@ def main() -> None:
             value=5000,
             step=100,
         )
+        window_size = st.slider(
+            "Window Size",
+            min_value=10,
+            max_value=100,
+            value=50,
+            step=5,
+        )
+        sensitivity = st.slider(
+            "Detection Sensitivity (Std Dev)",
+            min_value=1.0,
+            max_value=5.0,
+            value=3.0,
+            step=0.1,
+        )
         refresh = st.button("Refresh Stream")
 
     if refresh:
         try:
             with st.spinner("Running C++ engine and loading results..."):
-                tps, df = run_engine_stream(transactions)
+                tps, df = run_engine_stream(transactions, window_size, sensitivity)
             st.metric("Transactions Per Second (TPS)", f"{tps:,.2f}")
             plot_transactions(df)
+            render_audit_report(df, tps, window_size, sensitivity)
             st.markdown("### Transaction table")
             st.dataframe(df)
         except subprocess.CalledProcessError as exc:

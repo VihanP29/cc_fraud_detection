@@ -16,12 +16,16 @@
 struct CliOptions {
     bool streamMode = false;
     int streamCount = 10000;
+    int windowLen = 50;
+    double sensitivity = 3.0;
 };
 
 void printUsage(const std::string &programName) {
-    std::cout << "Usage: " << programName << " [--stream <num_transactions>]\n"
-              << "  --stream <num_transactions>   Output a CSV stream for dashboard consumption\n"
-              << "  --help                       Show this usage information\n";
+    std::cout << "Usage: " << programName << " [--stream <num_transactions>] [--window <size>] [--sensitivity <value>]\n"
+              << "  --stream <num_transactions>         Output a CSV stream for dashboard consumption\n"
+              << "  --window <size>                     Rolling window size for mean/std dev calculation\n"
+              << "  --sensitivity <value>               Detection threshold in standard deviations\n"
+              << "  --help                             Show this usage information\n";
 }
 
 CliOptions parseArguments(int argc, const char * argv[]) {
@@ -42,6 +46,30 @@ CliOptions parseArguments(int argc, const char * argv[]) {
             }
             if (options.streamCount <= 0) {
                 throw std::runtime_error("Stream transaction count must be positive\n");
+            }
+        } else if (arg == "--window") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing window size after --window\n");
+            }
+            try {
+                options.windowLen = std::stoi(argv[++i]);
+            } catch (const std::exception &) {
+                throw std::runtime_error("Invalid number supplied to --window\n");
+            }
+            if (options.windowLen < 10 || options.windowLen > 100) {
+                throw std::runtime_error("Window size must be between 10 and 100\n");
+            }
+        } else if (arg == "--sensitivity") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing sensitivity value after --sensitivity\n");
+            }
+            try {
+                options.sensitivity = std::stod(argv[++i]);
+            } catch (const std::exception &) {
+                throw std::runtime_error("Invalid number supplied to --sensitivity\n");
+            }
+            if (options.sensitivity < 1.0 || options.sensitivity > 5.0) {
+                throw std::runtime_error("Sensitivity must be between 1.0 and 5.0\n");
             }
         } else if (arg == "--help" || arg == "-h") {
             printUsage(programName);
@@ -90,8 +118,6 @@ void streamTransactions(int numTransactions, int windowLen, double sensitivity, 
 }
 
 int main(int argc, const char * argv[]) {
-    constexpr int windowLen = 50;
-    constexpr double sensitivity = 3.0;
     std::random_device rd;
     std::mt19937 rng(rd());
 
@@ -104,14 +130,14 @@ int main(int argc, const char * argv[]) {
     }
 
     if (options.streamMode) {
-        double tps = benchmarkTPS(1'000'000, windowLen, sensitivity, rng);
+        double tps = benchmarkTPS(1'000'000, options.windowLen, options.sensitivity, rng);
         std::cout << "TPS," << std::fixed << std::setprecision(2) << tps << "\n";
-        streamTransactions(options.streamCount, windowLen, sensitivity, rng);
+        streamTransactions(options.streamCount, options.windowLen, options.sensitivity, rng);
         return 0;
     }
 
-    std::cout << "--- SYSTEM STARTUP (Window: " << windowLen << ") ---\n";
-    AnomalyDetector engine(windowLen, sensitivity);
+    std::cout << "--- SYSTEM STARTUP (Window: " << options.windowLen << ", Sensitivity: " << options.sensitivity << ") ---\n";
+    AnomalyDetector engine(options.windowLen, options.sensitivity);
 
     std::cout << "\n[PHASE 1] Ingesting Normal Traffic ($40-$60)...\n";
     for (int i = 0; i < 10000; i++) {
