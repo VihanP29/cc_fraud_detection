@@ -13,10 +13,19 @@ ROOT_DIR = Path(__file__).resolve().parent
 
 def locate_engine_executable() -> str:
     engine_name = "engine.exe" if sys.platform.startswith("win") else "engine"
-    engine_path = ROOT_DIR / engine_name
-    if engine_path.exists():
-        return str(engine_path)
-    return engine_name
+    candidate_paths = [
+        ROOT_DIR / "build" / "Release" / engine_name,
+        ROOT_DIR / "build" / engine_name,
+        ROOT_DIR / engine_name,
+    ]
+
+    for path in candidate_paths:
+        if path.exists():
+            return str(path)
+
+    raise FileNotFoundError(
+        f"Engine executable not found. Please compile the C++ code first and ensure the binary exists in build/Release or build/."
+    )
 
 
 def run_engine_stream(num_transactions: int) -> tuple[float, pd.DataFrame]:
