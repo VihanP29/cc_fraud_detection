@@ -6,6 +6,7 @@
 //
 
 #pragma once
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -18,8 +19,10 @@ private:
     long maxSize;
     long head_index;
     long count;
+    bool verbose;
 public:
     AnomalyDetector(int size, double thresholdIn);
+    void setVerbose(bool enable);
     bool ingest(double amount);
     double getAvg();
     double getSTD();
