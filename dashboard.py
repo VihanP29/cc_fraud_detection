@@ -11,7 +11,7 @@ import streamlit as st
 ROOT_DIR = Path(__file__).resolve().parent
 
 
-def locate_engine_executable() -> str:
+def _find_engine_executable() -> str:
     engine_name = "engine.exe" if sys.platform.startswith("win") else "engine"
     candidate_paths = [
         ROOT_DIR / "build" / "Release" / engine_name,
@@ -22,9 +22,48 @@ def locate_engine_executable() -> str:
     for path in candidate_paths:
         if path.exists():
             return str(path)
+    return ""
+
+
+def compile_engine() -> None:
+    build_dir = ROOT_DIR / "build"
+    build_dir.mkdir(exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["cmake", ".."],
+            cwd=str(build_dir),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["cmake", "--build", ".", "--config", "Release"],
+            cwd=str(build_dir),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "Failed to compile the C++ engine. "
+            f"Stdout:\n{exc.stdout}\nStderr:\n{exc.stderr}"
+        )
+
+
+def locate_engine_executable() -> str:
+    path = _find_engine_executable()
+    if path:
+        return path
+
+    compile_engine()
+    path = _find_engine_executable()
+    if path:
+        return path
 
     raise FileNotFoundError(
-        f"Engine executable not found. Please compile the C++ code first and ensure the binary exists in build/Release or build/."
+        "Engine executable not found after attempted compilation. "
+        "Please verify CMake is installed and the C++ code is buildable."
     )
 
 
