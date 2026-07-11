@@ -69,22 +69,34 @@ def locate_engine_executable() -> str:
 
 
 def run_engine_stream(num_transactions: int, window_size: int, sensitivity: float) -> tuple[float, pd.DataFrame]:
-    engine_cmd = [
-        locate_engine_executable(),
-        "--stream",
-        str(num_transactions),
-        "--window",
-        str(window_size),
-        "--sensitivity",
-        str(sensitivity),
-    ]
-    completed = subprocess.run(
-        engine_cmd,
-        cwd=ROOT_DIR,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    def execute_stream() -> subprocess.CompletedProcess:
+        engine_cmd = [
+            locate_engine_executable(),
+            "--stream",
+            str(num_transactions),
+            "--window",
+            str(window_size),
+            "--sensitivity",
+            str(sensitivity),
+        ]
+        return subprocess.run(
+            engine_cmd,
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    try:
+        completed = execute_stream()
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr or ""
+        if "Unknown argument: --window" in stderr or "Unknown argument: --sensitivity" in stderr:
+            compile_engine()
+            completed = execute_stream()
+        else:
+            raise
+
     output = completed.stdout.strip().splitlines()
     if not output:
         raise RuntimeError("No output received from engine.")
