@@ -169,7 +169,7 @@ int main(int argc, const char * argv[]) {
         std::cout << "✅ SUCCESS: Low value ($" << tinyAmount << ") was ignored correctly.\n";
     }
 
-    double tps = benchmarkTPS(1'000'000, windowLen, sensitivity, rng);
+    double tps = benchmarkTPS(1'000'000, options.windowLen, options.sensitivity, rng);
     std::cout << "\n[PHASE 4] Benchmark: Transactions Per Second (TPS) = " << std::fixed << std::setprecision(2)
               << tps << "\n";
     return 0;
